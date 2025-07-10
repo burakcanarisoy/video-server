@@ -4,7 +4,8 @@ import subprocess
 import uuid
 import os
 
-app = Flask(__name__)
+app = Flask(__name__, static_folder="/tmp", static_url_path="")  # <- Statik dizin eklendi
+
 def wrap_text(text, max_line_length=60):
     words = text.split()
     lines = []
@@ -19,7 +20,6 @@ def wrap_text(text, max_line_length=60):
         lines.append(current_line)
     return "\n".join(lines)
 
-
 @app.route("/add_text", methods=["POST"])
 def add_text():
     data = request.json
@@ -29,16 +29,13 @@ def add_text():
     if not image_url:
         return {"error": "image_url is required"}, 400
 
-    # Dosya adları
     input_filename = f"{uuid.uuid4()}.jpg"
     output_filename = f"{uuid.uuid4()}_out.jpg"
 
-    # 1. Görseli indir
     img = requests.get(image_url)
     with open(input_filename, "wb") as f:
         f.write(img.content)
 
-    # 2. ffmpeg ile yazı bindir
     text = wrap_text(text)
     ffmpeg_cmd = [
         "ffmpeg", "-i", input_filename,
@@ -64,11 +61,24 @@ def add_text():
     except subprocess.CalledProcessError as e:
         return {"error": "ffmpeg failed", "details": str(e)}, 500
 
-    # 3. Görseli döndür
     return send_file(output_filename, mimetype="image/png")
 
+@app.route("/upload", methods=["POST"])
+def upload():
+    if "file" not in request.files:
+        return {"error": "No file part in the request"}, 400
+
+    file = request.files["file"]
+    if file.filename == "":
+        return {"error": "No selected file"}, 400
+
+    filename = f"{uuid.uuid4()}_{file.filename}"
+    filepath = os.path.join("/tmp", filename)
+    file.save(filepath)
+
+    public_url = f"https://{request.host}/{filename}"
+    return {"url": public_url}
+
 if __name__ == "__main__":
-    import os
     port = int(os.environ.get("PORT", 5001))
     app.run(host="0.0.0.0", port=port)
-
